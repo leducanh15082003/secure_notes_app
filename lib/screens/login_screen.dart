@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:secure_notes/screens/notes_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -93,6 +94,15 @@ class _LoginScreenState extends State<LoginScreen> {
             ElevatedButton(
               onPressed: _login,
               child: const Text('Login'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                );
+              },
+              child: const Text('Create Account'),
             ),
             if (_isLoggedInBefore) ...[
               const SizedBox(height: 20),
