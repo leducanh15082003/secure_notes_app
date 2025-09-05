@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:secure_notes/screens/notes_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:local_auth/local_auth.dart';
+
+import '../services/auth_service.dart';
+import '../services/biometric_service.dart';
+import 'notes_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -12,70 +14,87 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final LocalAuthentication auth = LocalAuthentication();
-
-  bool _isLoggedInBefore = false;
+  bool _useBiometrics = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _checkLoginStatus();
+    _loadSavedLogin();
   }
 
-  Future<void> _checkLoginStatus() async {
+  Future<void> _loadSavedLogin() async {
     final prefs = await SharedPreferences.getInstance();
-    final loggedIn = prefs.getBool('loggedIn') ?? false;
-    setState(() {
-      _isLoggedInBefore = loggedIn;
-    });
-    if (loggedIn) {
+    final savedUsername = prefs.getString('username');
+    final biometricsEnabled = prefs.getBool('useBiometrics') ?? false;
 
+    if (savedUsername != null && savedUsername.isNotEmpty) {
+      _usernameController.text = savedUsername;
     }
+    setState(() => _useBiometrics = biometricsEnabled);
   }
 
-  Future<void> _login() async {
-    if (_usernameController.text.isNotEmpty && _passwordController.text.isNotEmpty) {
+  Future<void> _login({bool useFingerprint = false}) async {
+    setState(() => _isLoading = true);
+
+    String username = _usernameController.text.trim();
+    String password = _passwordController.text.trim();
+
+    if (useFingerprint) {
+      final success = await BiometricService.authenticate();
+      if (!success) {
+        setState(() => _isLoading = false);
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('loggedIn', true);
+      password = prefs.getString('password') ?? '';
+    }
+
+    final token = await AuthService.login(username, password);
+
+    setState(() => _isLoading = false);
+
+    if (token != null && token.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', username);
+
+      if (!(prefs.getBool('askedBiometrics') ?? false)) {
+        final enable = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Enable Fingerprint Login?'),
+            content: const Text('Would you like to use fingerprint for future logins?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Yes')),
+            ],
+          ),
+        );
+        if (enable == true) {
+          await prefs.setBool('useBiometrics', true);
+          await prefs.setString('password', password);
+        }
+        await prefs.setBool('askedBiometrics', true);
+      }
+
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const NotesScreen()),
       );
-    }
-  }
-
-  Future<void> _loginWithBiometrics() async {
-    try {
-      final isAvailable = await auth.canCheckBiometrics;
-      if (isAvailable) {
-        final didAuthenticate = await auth.authenticate(
-          localizedReason: 'Authenticate for logging in!',
-          options: const AuthenticationOptions(biometricOnly: true),
-        );
-
-        if (didAuthenticate) {
-          if (!mounted) return;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NotesScreen()),
-          );
-        }
-      } else {
-        debugPrint('Biometric authentication is not available on this device.');
-      }
-    } catch (e) {
-      debugPrint('Biometric error: $e');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid username or password')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login'),),
+      appBar: AppBar(title: const Text('Login')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -91,11 +110,20 @@ class _LoginScreenState extends State<LoginScreen> {
               obscureText: true,
             ),
             const SizedBox(height: 20),
+            if (_useBiometrics)
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : () => _login(useFingerprint: true),
+                icon: const Icon(Icons.fingerprint),
+                label: const Text('Login with Fingerprint'),
+              ),
+            const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _login,
-              child: const Text('Login'),
+              onPressed: _isLoading ? null : () => _login(),
+              child: _isLoading
+                  ? const CircularProgressIndicator()
+                  : const Text('Login'),
             ),
-            ElevatedButton(
+            TextButton(
               onPressed: () {
                 Navigator.push(
                   context,
@@ -104,14 +132,6 @@ class _LoginScreenState extends State<LoginScreen> {
               },
               child: const Text('Create Account'),
             ),
-            if (_isLoggedInBefore) ...[
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _loginWithBiometrics,
-                icon: const Icon(Icons.fingerprint),
-                label: const Text('Login with Fingerprint'),
-              )
-            ]
           ],
         ),
       ),
