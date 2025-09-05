@@ -23,14 +23,14 @@ class _NotesScreenState extends State<NotesScreen> {
   Future<void> _loadNotes() async {
     try {
       final notes = await NoteService.fetchNotes();
+      print("Fetched notes: $notes");
       setState(() {
         _notes = notes;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to load notes: $e')));
+      _showSnackBar('Failed to load notes: $e', isError: true);
     }
   }
 
@@ -45,6 +45,16 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _addNote() async {
     final titleController = TextEditingController();
     final contentController = TextEditingController();
@@ -53,10 +63,12 @@ class _NotesScreenState extends State<NotesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('New Note'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Title')),
+            const SizedBox(height: 10),
             TextField(controller: contentController, decoration: const InputDecoration(labelText: 'Content')),
           ],
         ),
@@ -72,12 +84,7 @@ class _NotesScreenState extends State<NotesScreen> {
         titleController.text.trim(),
         contentController.text.trim(),
       );
-      if (success) {
-        _loadNotes();
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Failed to create note')));
-      }
+      success ? _loadNotes() : _showSnackBar('Failed to create note', isError: true);
     }
   }
 
@@ -90,11 +97,19 @@ class _NotesScreenState extends State<NotesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Edit Note'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(controller: titleController, decoration: const InputDecoration(labelText: 'Title')),
-            TextField(controller: contentController, decoration: const InputDecoration(labelText: 'Content')),
+            const SizedBox(height: 10),
+            TextField(
+              controller: contentController,
+              decoration: const InputDecoration(labelText: 'Content'),
+              keyboardType: TextInputType.multiline,
+              maxLines: null,
+              minLines: 3,
+            ),
           ],
         ),
         actions: [
@@ -110,12 +125,7 @@ class _NotesScreenState extends State<NotesScreen> {
         titleController.text.trim(),
         contentController.text.trim(),
       );
-      if (success) {
-        _loadNotes();
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Failed to update note')));
-      }
+      success ? _loadNotes() : _showSnackBar('Failed to update note', isError: true);
     }
   }
 
@@ -124,9 +134,9 @@ class _NotesScreenState extends State<NotesScreen> {
     final success = await NoteService.deleteNote(note['id']);
     if (success) {
       setState(() => _notes.removeAt(index));
+      _showSnackBar('Note deleted');
     } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Failed to delete note')));
+      _showSnackBar('Failed to delete note', isError: true);
     }
   }
 
@@ -136,40 +146,52 @@ class _NotesScreenState extends State<NotesScreen> {
       appBar: AppBar(
         title: const Text('Secure Notes'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
-          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'logout') _logout();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'logout', child: Text('Logout')),
+            ],
+          )
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _notes.isEmpty
               ? const Center(child: Text('No notes yet'))
-              : ListView.builder(
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemCount: _notes.length,
-                  itemBuilder: (context, index) => ListTile(
-                    title: Text(_notes[index]['title'] ?? ''),
-                    subtitle: Text(_notes[index]['content'] ?? ''),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _editNote(index),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete),
-                          onPressed: () => _deleteNote(index),
-                        ),
-                      ],
+                  itemBuilder: (context, index) => Card(
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: ListTile(
+                      title: Text(
+                        _notes[index]['title'] ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        _notes[index]['content'] ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _editNote(index)),
+                          IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteNote(index)),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _addNote,
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Add Note'),
+        tooltip: 'Create a new note',
       ),
     );
   }
