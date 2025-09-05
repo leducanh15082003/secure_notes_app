@@ -13,17 +13,24 @@ class BiometricService {
 
   static Future<bool> authenticate() async {
     try {
-      final available = await isAvailable();
-      if (!available) return false;
+      final canCheckBiometrics = await _auth.canCheckBiometrics;
+      final isDeviceSupported = await _auth.isDeviceSupported();
 
-      return await _auth.authenticate(
-        localizedReason: 'Use your fingerprint to login',
+      if (!canCheckBiometrics && !isDeviceSupported) {
+        return false;
+      }
+
+      final didAuthenticate = await _auth.authenticate(
+        localizedReason: 'Authenticate to access your notes',
         options: const AuthenticationOptions(
-          biometricOnly: true,
+          biometricOnly: false,
           stickyAuth: true,
         ),
       );
+
+      return didAuthenticate;
     } catch (e) {
+      print('Authentication error: $e');
       return false;
     }
   }
